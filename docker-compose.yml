@@ -1,0 +1,398 @@
+version: '3.8'
+
+#################################################
+# AuditCaseOS - Docker Compose Configuration
+#
+# Profiles:
+#   - core: Essential services (IRIS, RAG Gateway, Postgres, Redis, MinIO)
+#   - ai: Optional Ollama for local SLM
+#   - docs: Nextcloud + ONLYOFFICE for document management
+#   - paperless: Paperless-ngx for OCR and document indexing
+#   - ingress: Nginx reverse proxy
+#################################################
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+  storage:
+    driver: bridge
+  ai:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  iris_db_data:
+  iris_downloads:
+  iris_user_templates:
+  minio_data:
+  nextcloud_data:
+  nextcloud_apps:
+  nextcloud_config:
+  onlyoffice_data:
+  onlyoffice_logs:
+  paperless_data:
+  paperless_media:
+  paperless_export:
+  paperless_consume:
+  ollama_data:
+
+services:
+  ###################
+  # Core Infrastructure
+  ###################
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: [core]
+    container_name: auditcaseos-postgres
+    networks:
+      - backend
+      - storage
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init.sh
+      - ./config/postgres/init-pgvector.sql:/docker-entrypoint-initdb.d/02-pgvector.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    profiles: [core]
+    container_name: auditcaseos-redis
+    networks:
+      - backend
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    profiles: [core]
+    container_name: auditcaseos-minio
+    networks:
+      - storage
+      - frontend
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ###################
+  # DFIR-IRIS
+  ###################
+
+  iris-db:
+    image: postgres:15
+    profiles: [core]
+    container_name: auditcaseos-iris-db
+    networks:
+      - backend
+    environment:
+      POSTGRES_USER: ${IRIS_DB_USER}
+      POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
+      POSTGRES_DB: iris_db
+    volumes:
+      - iris_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${IRIS_DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  iris-app:
+    image: ghcr.io/dfir-iris/iriswebapp:latest
+    profiles: [core]
+    container_name: auditcaseos-iris-app
+    networks:
+      - backend
+      - frontend
+    depends_on:
+      iris-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
+      IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT}
+      POSTGRES_SERVER: iris-db
+      POSTGRES_USER: ${IRIS_DB_USER}
+      POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
+      POSTGRES_DB: iris_db
+      CELERY_BROKER_URL: redis://redis:6379/0
+      IRIS_WORKER: 1
+      IRIS_UPSTREAM_SERVER: iris-app
+      IRIS_UPSTREAM_PORT: 8000
+      IRIS_ADMIN_EMAIL: ${IRIS_ADMIN_EMAIL}
+      IRIS_ADMIN_PASSWORD: ${IRIS_ADMIN_PASSWORD}
+    volumes:
+      - iris_downloads:/home/iris/downloads
+      - iris_user_templates:/home/iris/user_templates
+    ports:
+      - "8000:8000"
+    command: ['sh', '-c', 'iris-webapp']
+    restart: unless-stopped
+
+  iris-worker:
+    image: ghcr.io/dfir-iris/iriswebapp:latest
+    profiles: [core]
+    container_name: auditcaseos-iris-worker
+    networks:
+      - backend
+    depends_on:
+      - iris-app
+      - redis
+    environment:
+      IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      POSTGRES_SERVER: iris-db
+      POSTGRES_USER: ${IRIS_DB_USER}
+      POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
+      POSTGRES_DB: iris_db
+    command: ['celery', '-A', 'app.celery', 'worker', '-l', 'INFO']
+    restart: unless-stopped
+
+  ###################
+  # RAG Gateway (Custom Service)
+  ###################
+
+  rag-gateway:
+    build:
+      context: ./services/rag-gateway
+      dockerfile: Dockerfile
+    profiles: [core]
+    container_name: auditcaseos-rag-gateway
+    networks:
+      - backend
+      - frontend
+      - ai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag_db
+      REDIS_URL: redis://redis:6379/1
+
+      # IRIS Integration
+      IRIS_API_URL: http://iris-app:8000
+      IRIS_API_KEY: ${IRIS_API_KEY}
+
+      # MinIO Storage
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_SECURE: "false"
+
+      # Nextcloud (Phase 2)
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL:-http://nextcloud}
+      NEXTCLOUD_USERNAME: ${NEXTCLOUD_USERNAME:-admin}
+      NEXTCLOUD_PASSWORD: ${NEXTCLOUD_PASSWORD:-}
+
+      # Paperless (Phase 2)
+      PAPERLESS_URL: ${PAPERLESS_URL:-http://paperless:8000}
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:-}
+
+      # AI/Embeddings
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-384}
+
+      # Ollama (optional)
+      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+
+      # App Config
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEBUG: ${DEBUG:-false}
+    volumes:
+      - ./services/rag-gateway/app:/app/app  # Hot-reload for development
+    ports:
+      - "8080:8080"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+    restart: unless-stopped
+
+  ###################
+  # Nextcloud (Phase 2)
+  ###################
+
+  nextcloud:
+    image: nextcloud:stable-fpm
+    profiles: [docs]
+    container_name: auditcaseos-nextcloud
+    networks:
+      - backend
+      - frontend
+      - storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: nextcloud_db
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      REDIS_HOST: redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_DOMAIN}
+      ONLYOFFICE_URL: http://onlyoffice:80
+    volumes:
+      - nextcloud_data:/var/www/html
+      - nextcloud_apps:/var/www/html/custom_apps
+      - nextcloud_config:/var/www/html/config
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    profiles: [docs]
+    container_name: auditcaseos-onlyoffice
+    networks:
+      - backend
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+      JWT_HEADER: AuthorizationJwt
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+    ports:
+      - "8082:80"
+    restart: unless-stopped
+
+  ###################
+  # Paperless-ngx (Phase 2)
+  ###################
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    profiles: [paperless]
+    container_name: auditcaseos-paperless
+    networks:
+      - backend
+      - frontend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PAPERLESS_REDIS: redis://redis:6379/2
+      PAPERLESS_DBHOST: postgres
+      PAPERLESS_DBNAME: paperless_db
+      PAPERLESS_DBUSER: ${PAPERLESS_DB_USER}
+      PAPERLESS_DBPASS: ${PAPERLESS_DB_PASSWORD}
+      PAPERLESS_TIKA_ENABLED: 1
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+      PAPERLESS_TIKA_ENDPOINT: http://tika:9998
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY}
+      PAPERLESS_URL: https://${PAPERLESS_DOMAIN}
+      PAPERLESS_ADMIN_USER: ${PAPERLESS_ADMIN_USER}
+      PAPERLESS_ADMIN_PASSWORD: ${PAPERLESS_ADMIN_PASSWORD}
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - paperless_export:/usr/src/paperless/export
+      - paperless_consume:/usr/src/paperless/consume
+    ports:
+      - "8083:8000"
+    restart: unless-stopped
+
+  tika:
+    image: apache/tika:latest
+    profiles: [paperless]
+    container_name: auditcaseos-tika
+    networks:
+      - backend
+    restart: unless-stopped
+
+  gotenberg:
+    image: gotenberg/gotenberg:7
+    profiles: [paperless]
+    container_name: auditcaseos-gotenberg
+    networks:
+      - backend
+    restart: unless-stopped
+
+  ###################
+  # Ollama (Optional AI)
+  ###################
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ai]
+    container_name: auditcaseos-ollama
+    networks:
+      - ai
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_MODELS: ${OLLAMA_MODELS:-mistral:7b}
+    ports:
+      - "11434:11434"
+    # Uncomment if you have GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    restart: unless-stopped
+
+  ###################
+  # Nginx Reverse Proxy (Optional)
+  ###################
+
+  nginx:
+    image: nginx:alpine
+    profiles: [ingress]
+    container_name: auditcaseos-nginx
+    networks:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./config/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - iris-app
+      - rag-gateway
+    restart: unless-stopped
