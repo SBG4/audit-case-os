@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 import structlog
 
 from app.config import get_settings
-from app.api.router import api_router
+from app.api.v1 import api_router
 from app.db.session import init_db, close_db
 
 # Configure structured logging
@@ -82,7 +82,7 @@ def create_app() -> FastAPI:
     )
 
     # Include routers
-    app.include_router(api_router, prefix="/api/v1")
+    app.include_router(api_router)
 
     # Root endpoint
     @app.get("/")
@@ -98,7 +98,8 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         """Health check endpoint for Docker and monitoring."""
-        from app.db.session import check_db_health
+        from app.db.session import engine
+        from sqlalchemy import text
 
         health_status = {
             "status": "healthy",
@@ -108,8 +109,9 @@ def create_app() -> FastAPI:
 
         # Check database
         try:
-            db_healthy = await check_db_health()
-            health_status["services"]["database"] = "up" if db_healthy else "down"
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            health_status["services"]["database"] = "up"
         except Exception as e:
             health_status["services"]["database"] = "down"
             health_status["status"] = "unhealthy"
@@ -122,6 +124,9 @@ def create_app() -> FastAPI:
             health_status["services"]["embeddings"] = "up" if embedder.is_loaded() else "down"
         except Exception:
             health_status["services"]["embeddings"] = "down"
+
+        # Check IRIS connectivity
+        health_status["services"]["iris"] = "configured" if settings.is_iris_configured() else "not_configured"
 
         return JSONResponse(
             content=health_status,
