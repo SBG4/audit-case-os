@@ -107,6 +107,14 @@ services:
   # DFIR-IRIS
   ###################
 
+  iris-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    profiles: [core]
+    container_name: auditcaseos-iris-rabbitmq
+    networks:
+      - backend
+    restart: unless-stopped
+
   iris-db:
     image: ghcr.io/dfir-iris/iriswebapp_db:v2.4.20
     profiles: [core]
@@ -116,6 +124,8 @@ services:
     environment:
       POSTGRES_USER: ${IRIS_DB_USER}
       POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
+      POSTGRES_ADMIN_USER: ${IRIS_DB_USER}
+      POSTGRES_ADMIN_PASSWORD: ${IRIS_DB_PASSWORD}
       POSTGRES_DB: iris_db
     volumes:
       - iris_db_data:/var/lib/postgresql/data
@@ -136,10 +146,9 @@ services:
     depends_on:
       iris-db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      iris-rabbitmq:
+        condition: service_started
     environment:
-      SECRET_KEY: ${IRIS_SECRET_KEY}
       IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
       IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT}
       POSTGRES_SERVER: iris-db
@@ -149,13 +158,12 @@ services:
       POSTGRES_ADMIN_USER: ${IRIS_DB_USER}
       POSTGRES_ADMIN_PASSWORD: ${IRIS_DB_PASSWORD}
       POSTGRES_DB: iris_db
-      CELERY_BROKER: redis://redis:6379/0
-      IRIS_WORKER: 1
+      CELERY_BROKER: amqp://iris-rabbitmq
       IRIS_ADM_EMAIL: ${IRIS_ADMIN_EMAIL}
       IRIS_ADM_PASSWORD: ${IRIS_ADMIN_PASSWORD}
+      IRIS_ADM_USERNAME: administrator
       IRIS_AUTHENTICATION_TYPE: local
       DOCKERIZED: 1
-      LOG_LEVEL: INFO
     volumes:
       - iris_downloads:/home/iris/downloads
       - iris_user_templates:/home/iris/user_templates
@@ -172,13 +180,17 @@ services:
       - backend
     depends_on:
       - iris-app
-      - redis
+      - iris-rabbitmq
     environment:
       IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
-      CELERY_BROKER: redis://redis:6379/0
+      IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT}
+      CELERY_BROKER: amqp://iris-rabbitmq
       POSTGRES_SERVER: iris-db
+      POSTGRES_PORT: 5432
       POSTGRES_USER: ${IRIS_DB_USER}
       POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
+      POSTGRES_ADMIN_USER: ${IRIS_DB_USER}
+      POSTGRES_ADMIN_PASSWORD: ${IRIS_DB_PASSWORD}
       POSTGRES_DB: iris_db
       IRIS_WORKER: 1
     command: ['./wait-for-iriswebapp.sh', 'iris-app:8000', './iris-entrypoint.sh', 'iris-worker']
