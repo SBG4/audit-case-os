@@ -108,7 +108,7 @@ services:
   ###################
 
   iris-db:
-    image: postgres:15
+    image: ghcr.io/dfir-iris/iriswebapp_db:v2.4.20
     profiles: [core]
     container_name: auditcaseos-iris-db
     networks:
@@ -127,7 +127,7 @@ services:
     restart: unless-stopped
 
   iris-app:
-    image: ghcr.io/dfir-iris/iriswebapp:latest
+    image: ghcr.io/dfir-iris/iriswebapp_app:v2.4.20
     profiles: [core]
     container_name: auditcaseos-iris-app
     networks:
@@ -139,28 +139,33 @@ services:
       redis:
         condition: service_healthy
     environment:
+      SECRET_KEY: ${IRIS_SECRET_KEY}
       IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
       IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT}
       POSTGRES_SERVER: iris-db
+      POSTGRES_PORT: 5432
       POSTGRES_USER: ${IRIS_DB_USER}
       POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
+      POSTGRES_ADMIN_USER: ${IRIS_DB_USER}
+      POSTGRES_ADMIN_PASSWORD: ${IRIS_DB_PASSWORD}
       POSTGRES_DB: iris_db
-      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_BROKER: redis://redis:6379/0
       IRIS_WORKER: 1
-      IRIS_UPSTREAM_SERVER: iris-app
-      IRIS_UPSTREAM_PORT: 8000
-      IRIS_ADMIN_EMAIL: ${IRIS_ADMIN_EMAIL}
-      IRIS_ADMIN_PASSWORD: ${IRIS_ADMIN_PASSWORD}
+      IRIS_ADM_EMAIL: ${IRIS_ADMIN_EMAIL}
+      IRIS_ADM_PASSWORD: ${IRIS_ADMIN_PASSWORD}
+      IRIS_AUTHENTICATION_TYPE: local
+      DOCKERIZED: 1
+      LOG_LEVEL: INFO
     volumes:
       - iris_downloads:/home/iris/downloads
       - iris_user_templates:/home/iris/user_templates
     ports:
-      - "8000:8000"
-    command: ['sh', '-c', 'iris-webapp']
+      - "8001:8000"
+    command: ['nohup', './iris-entrypoint.sh', 'iriswebapp']
     restart: unless-stopped
 
   iris-worker:
-    image: ghcr.io/dfir-iris/iriswebapp:latest
+    image: ghcr.io/dfir-iris/iriswebapp_app:v2.4.20
     profiles: [core]
     container_name: auditcaseos-iris-worker
     networks:
@@ -170,12 +175,13 @@ services:
       - redis
     environment:
       IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
-      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_BROKER: redis://redis:6379/0
       POSTGRES_SERVER: iris-db
       POSTGRES_USER: ${IRIS_DB_USER}
       POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD}
       POSTGRES_DB: iris_db
-    command: ['celery', '-A', 'app.celery', 'worker', '-l', 'INFO']
+      IRIS_WORKER: 1
+    command: ['./wait-for-iriswebapp.sh', 'iris-app:8000', './iris-entrypoint.sh', 'iris-worker']
     restart: unless-stopped
 
   ###################
