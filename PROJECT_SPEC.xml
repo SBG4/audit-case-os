@@ -1,0 +1,859 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<auditcaseos-project-specification>
+
+  <!-- ============================================ -->
+  <!-- PROJECT METADATA -->
+  <!-- ============================================ -->
+  <metadata>
+    <project-name>AuditCaseOS</project-name>
+    <version>0.1.0</version>
+    <phase>Phase 1 - Core Integration</phase>
+    <status>Active Development</status>
+    <repository>https://github.com/SBG4/audit-case-os</repository>
+    <last-updated>2026-01-14</last-updated>
+  </metadata>
+
+  <!-- ============================================ -->
+  <!-- PROJECT VISION & PURPOSE -->
+  <!-- ============================================ -->
+  <vision>
+    <description>
+      AuditCaseOS is an AI-powered investigation case management platform that combines
+      DFIR-IRIS for case workflow management, intelligent document processing with RAG
+      (Retrieval-Augmented Generation), and optional local SLM integration for privacy-first
+      evidence analysis and automated report generation.
+    </description>
+
+    <core-value-propositions>
+      <value>Single source of truth for digital forensics and incident response investigations</value>
+      <value>AI-powered semantic search across all case evidence without cloud dependencies</value>
+      <value>Automated report generation from case timelines, evidence, and findings</value>
+      <value>Privacy-first architecture with optional local SLM (no data leaves your network)</value>
+      <value>Unified document management with OCR and collaborative editing</value>
+    </core-value-propositions>
+
+    <target-users>
+      <user-type>DFIR Analysts conducting digital forensics investigations</user-type>
+      <user-type>Security Operations Centers (SOC) tracking incidents</user-type>
+      <user-type>Compliance teams managing audit evidence</user-type>
+      <user-type>Legal teams organizing case documentation</user-type>
+    </target-users>
+  </vision>
+
+  <!-- ============================================ -->
+  <!-- CURRENT ARCHITECTURE -->
+  <!-- ============================================ -->
+  <architecture>
+    <deployment-model>Docker Compose with profile-based service orchestration</deployment-model>
+
+    <profiles>
+      <profile name="core" status="implemented">
+        <description>Essential services for case management and RAG</description>
+        <services>postgres, redis, minio, iris-db, iris-rabbitmq, iris-app, iris-worker, rag-gateway</services>
+      </profile>
+      <profile name="ai" status="planned">
+        <description>Optional Ollama for local SLM</description>
+        <services>ollama</services>
+      </profile>
+      <profile name="docs" status="planned">
+        <description>Nextcloud + ONLYOFFICE for document management</description>
+        <services>nextcloud, onlyoffice</services>
+      </profile>
+      <profile name="paperless" status="planned">
+        <description>Paperless-ngx for OCR and document indexing</description>
+        <services>paperless, tika, gotenberg</services>
+      </profile>
+      <profile name="ingress" status="planned">
+        <description>Nginx reverse proxy for production deployment</description>
+        <services>nginx</services>
+      </profile>
+    </profiles>
+
+    <technology-stack>
+      <category name="Case Management">
+        <technology name="DFIR-IRIS" version="v2.4.20">
+          <purpose>Investigation case management, timeline tracking, evidence cataloging</purpose>
+          <ports>8001 (HTTP API and Web UI)</ports>
+          <database>Dedicated PostgreSQL 12 (iris-db)</database>
+          <authentication>Local auth, API key: B8BA5D730210B50F41C06941582D7965D57319D5685440587F98DFDC45A01594</authentication>
+        </technology>
+      </category>
+
+      <category name="RAG Processing">
+        <technology name="RAG Gateway" version="1.0.0">
+          <purpose>Document ingestion, embedding generation, semantic search, AI assistance</purpose>
+          <framework>FastAPI (Python 3.11+)</framework>
+          <ports>8080 (HTTP API)</ports>
+          <database>Shared PostgreSQL 16 with pgvector extension</database>
+        </technology>
+        <technology name="Sentence Transformers" version="latest">
+          <model>sentence-transformers/all-MiniLM-L6-v2</model>
+          <embedding-dimension>384</embedding-dimension>
+        </technology>
+      </category>
+
+      <category name="Infrastructure">
+        <technology name="PostgreSQL" version="16 (pgvector)">
+          <purpose>Main database with vector similarity search</purpose>
+          <extensions>pgvector 0.8.1</extensions>
+          <databases>postgres (default), rag_db, nextcloud_db, paperless_db</databases>
+        </technology>
+        <technology name="PostgreSQL" version="12">
+          <purpose>Dedicated IRIS database (iris-db)</purpose>
+          <databases>iris_db</databases>
+        </technology>
+        <technology name="Redis" version="7-alpine">
+          <purpose>Caching, session storage, RAG task queue</purpose>
+        </technology>
+        <technology name="RabbitMQ" version="3-management-alpine">
+          <purpose>IRIS Celery message broker</purpose>
+        </technology>
+        <technology name="MinIO" version="latest">
+          <purpose>S3-compatible object storage for evidence files</purpose>
+          <ports>9000 (API), 9001 (Console)</ports>
+        </technology>
+      </category>
+    </technology-stack>
+
+    <network-topology>
+      <network name="frontend">
+        <purpose>Public-facing services (nginx, app UIs)</purpose>
+        <services>iris-app, rag-gateway, nextcloud, nginx</services>
+      </network>
+      <network name="backend">
+        <purpose>Internal service communication</purpose>
+        <services>postgres, redis, iris-db, iris-rabbitmq, iris-app, iris-worker, rag-gateway, nextcloud, paperless</services>
+      </network>
+      <network name="storage">
+        <purpose>Storage layer isolation</purpose>
+        <services>postgres, minio, nextcloud</services>
+      </network>
+      <network name="ai">
+        <purpose>AI/ML workload isolation</purpose>
+        <services>ollama, rag-gateway</services>
+      </network>
+    </network-topology>
+  </architecture>
+
+  <!-- ============================================ -->
+  <!-- IMPLEMENTED FEATURES -->
+  <!-- ============================================ -->
+  <implemented-features phase="Phase 1">
+
+    <feature id="F001" status="complete">
+      <name>Core Infrastructure Setup</name>
+      <description>Docker Compose orchestration with all core services</description>
+      <components>
+        <component>PostgreSQL 16 with pgvector extension</component>
+        <component>Redis for caching</component>
+        <component>MinIO for object storage</component>
+      </components>
+      <verification>
+        <test>All core services start and pass health checks</test>
+        <test>pgvector extension available in rag_db database</test>
+      </verification>
+    </feature>
+
+    <feature id="F002" status="complete">
+      <name>DFIR-IRIS Integration</name>
+      <description>Full IRIS case management platform integrated and operational</description>
+      <components>
+        <component>IRIS Database (PostgreSQL 12)</component>
+        <component>IRIS App (Web UI + API on port 8001)</component>
+        <component>IRIS Worker (Celery background tasks)</component>
+        <component>RabbitMQ (Celery broker)</component>
+      </components>
+      <credentials>
+        <username>administrator</username>
+        <password>ChangeMe123!</password>
+        <email>admin@auditcaseos.local</email>
+        <api-key>B8BA5D730210B50F41C06941582D7965D57319D5685440587F98DFDC45A01594</api-key>
+      </credentials>
+      <api-endpoints>
+        <endpoint method="GET" path="/manage/cases/list">List all investigation cases</endpoint>
+        <endpoint method="GET" path="/api/versions">Get IRIS version info</endpoint>
+      </api-endpoints>
+      <verification>
+        <test>IRIS web interface accessible at http://localhost:8001</test>
+        <test>Login successful with administrator credentials</test>
+        <test>API authentication works with Bearer token</test>
+        <test>Initial demo case "#1 - Initial Demo" created successfully</test>
+      </verification>
+    </feature>
+
+    <feature id="F003" status="complete">
+      <name>RAG Gateway Foundation</name>
+      <description>FastAPI service with database connectivity and health checks</description>
+      <components>
+        <component>FastAPI application structure</component>
+        <component>SQLAlchemy async ORM with asyncpg driver</component>
+        <component>Pydantic settings management</component>
+        <component>Health check endpoints</component>
+        <component>Embedding service foundation</component>
+      </components>
+      <api-endpoints>
+        <endpoint method="GET" path="/health">
+          <response>{"status": "healthy", "version": "1.0.0", "services": {"database": "up", "embeddings": "up"}}</response>
+        </endpoint>
+      </api-endpoints>
+      <verification>
+        <test>RAG Gateway starts successfully</test>
+        <test>Database connection established to rag_db</test>
+        <test>Health endpoint returns 200 OK</test>
+        <test>Embedding service initializes</test>
+      </verification>
+    </feature>
+
+    <feature id="F004" status="complete">
+      <name>Environment Configuration System</name>
+      <description>Secure environment variable management with examples</description>
+      <files>
+        <file>.env.example - Template with all required variables</file>
+        <file>.env - Active configuration (gitignored)</file>
+      </files>
+      <security>
+        <item>Random passwords generated for all services</item>
+        <item>.env excluded from version control</item>
+        <item>API keys pre-generated and documented</item>
+      </security>
+    </feature>
+
+  </implemented-features>
+
+  <!-- ============================================ -->
+  <!-- DEVELOPMENT GUARDRAILS -->
+  <!-- ============================================ -->
+  <guardrails>
+
+    <security-requirements>
+      <rule id="SEC001" severity="critical">
+        <title>No Hardcoded Secrets</title>
+        <description>All passwords, API keys, and secrets MUST be loaded from environment variables</description>
+        <enforcement>Pre-commit hooks scan for common secret patterns</enforcement>
+      </rule>
+
+      <rule id="SEC002" severity="critical">
+        <title>Input Validation</title>
+        <description>All user inputs MUST be validated using Pydantic models or equivalent</description>
+        <applies-to>API endpoints, database queries, file uploads</applies-to>
+      </rule>
+
+      <rule id="SEC003" severity="high">
+        <title>SQL Injection Prevention</title>
+        <description>NEVER use string concatenation for SQL queries. Use ORM or parameterized queries only</description>
+      </rule>
+
+      <rule id="SEC004" severity="high">
+        <title>Authentication Required</title>
+        <description>All RAG Gateway endpoints (except /health) MUST verify IRIS API key or implement auth</description>
+      </rule>
+
+      <rule id="SEC005" severity="medium">
+        <title>File Upload Restrictions</title>
+        <description>Validate file types, scan for malware, limit file sizes, sanitize filenames</description>
+        <max-file-size>100MB</max-file-size>
+      </rule>
+    </security-requirements>
+
+    <coding-standards>
+      <rule id="CODE001">
+        <title>Type Hints Required</title>
+        <description>All Python functions MUST have type hints for parameters and return values</description>
+        <example>async def get_case(case_id: int) -> Optional[Case]:</example>
+      </rule>
+
+      <rule id="CODE002">
+        <title>Async/Await Pattern</title>
+        <description>Use async/await for all I/O operations (database, HTTP, file access)</description>
+      </rule>
+
+      <rule id="CODE003">
+        <title>Error Handling</title>
+        <description>All functions MUST handle errors gracefully with try/except blocks and logging</description>
+        <log-level>ERROR for exceptions, INFO for operations, DEBUG for verbose details</log-level>
+      </rule>
+
+      <rule id="CODE004">
+        <title>Pydantic Models for Data</title>
+        <description>Define Pydantic models for all request/response schemas and configuration</description>
+      </rule>
+
+      <rule id="CODE005">
+        <title>SQLAlchemy Models for Database</title>
+        <description>Use SQLAlchemy ORM models for all database tables, never raw SQL strings</description>
+      </rule>
+
+      <rule id="CODE006">
+        <title>Dependency Injection</title>
+        <description>Use FastAPI dependency injection for database sessions, authentication, etc.</description>
+      </rule>
+    </coding-standards>
+
+    <architectural-constraints>
+      <constraint id="ARCH001">
+        <title>IRIS as Single Source of Truth</title>
+        <description>Case metadata (case_id, case_name, client, dates) MUST come from IRIS API, never duplicated in RAG database</description>
+        <rationale>Avoid data synchronization issues and maintain IRIS as authoritative source</rationale>
+      </constraint>
+
+      <constraint id="ARCH002">
+        <title>RAG Gateway as Read-Only IRIS Client</title>
+        <description>RAG Gateway MUST NOT create or modify cases in IRIS, only read and sync data</description>
+        <exception>May create IRIS notes/comments if explicitly approved</exception>
+      </constraint>
+
+      <constraint id="ARCH003">
+        <title>Stateless API Design</title>
+        <description>RAG Gateway endpoints MUST be stateless, store no session data in memory</description>
+        <use-redis>For caching and temporary job status only</use-redis>
+      </constraint>
+
+      <constraint id="ARCH004">
+        <title>Embedding Model Immutability</title>
+        <description>Once embeddings are generated with a model, that model MUST NOT change without full re-indexing</description>
+        <migration-strategy>Version embeddings in database schema if model changes</migration-strategy>
+      </constraint>
+
+      <constraint id="ARCH005">
+        <title>No Vendor Lock-In</title>
+        <description>Use open standards and avoid proprietary APIs (S3-compatible storage, PostgreSQL, open models)</description>
+      </constraint>
+    </architectural-constraints>
+
+    <testing-requirements>
+      <requirement id="TEST001">
+        <title>Unit Tests for Business Logic</title>
+        <coverage-minimum>80%</coverage-minimum>
+        <framework>pytest with pytest-asyncio</framework>
+      </requirement>
+
+      <requirement id="TEST002">
+        <title>Integration Tests for API Endpoints</title>
+        <description>Test all RAG Gateway endpoints with real database (use test fixtures)</description>
+      </requirement>
+
+      <requirement id="TEST003">
+        <title>E2E Tests for Critical Flows</title>
+        <flows>
+          <flow>Sync case → Generate embeddings → Search → Verify results</flow>
+          <flow>Create case in IRIS → Sync to RAG → Generate report</flow>
+        </flows>
+      </requirement>
+
+      <requirement id="TEST004">
+        <title>Health Check Validation</title>
+        <description>All services MUST have health checks that verify actual functionality, not just process alive</description>
+      </requirement>
+    </testing-requirements>
+
+    <performance-requirements>
+      <requirement id="PERF001">
+        <metric>API Response Time</metric>
+        <target>p95 &lt; 500ms for search queries, p95 &lt; 2s for sync operations</target>
+      </requirement>
+
+      <requirement id="PERF002">
+        <metric>Embedding Generation</metric>
+        <target>Process 100 document chunks per minute minimum</target>
+      </requirement>
+
+      <requirement id="PERF003">
+        <metric>Vector Search</metric>
+        <target>Search 100k vectors in &lt; 200ms</target>
+        <strategy>Use pgvector HNSW index for large datasets</strategy>
+      </requirement>
+
+      <requirement id="PERF004">
+        <metric>Concurrent Users</metric>
+        <target>Support 50 concurrent users without degradation</target>
+      </requirement>
+    </performance-requirements>
+
+  </guardrails>
+
+  <!-- ============================================ -->
+  <!-- PLANNED FEATURES (ROADMAP) -->
+  <!-- ============================================ -->
+  <planned-features>
+
+    <feature id="F005" priority="high" phase="Phase 1">
+      <name>RAG Case Sync Endpoint</name>
+      <endpoint>POST /api/v1/sync/case/{case_id}</endpoint>
+      <description>
+        Fetch all documents and evidence from an IRIS case, chunk into semantic segments,
+        generate embeddings, and store in vector database for semantic search.
+      </description>
+      <acceptance-criteria>
+        <criterion>Fetch case metadata from IRIS API using case_id</criterion>
+        <criterion>Download all evidence files from IRIS case</criterion>
+        <criterion>Extract text from PDFs, DOCX, images (OCR), and other formats</criterion>
+        <criterion>Chunk documents into 512-token segments with 128-token overlap</criterion>
+        <criterion>Generate 384-dim embeddings using Sentence Transformers</criterion>
+        <criterion>Store chunks and embeddings in rag_db with case_id reference</criterion>
+        <criterion>Return sync status with document count and chunk count</criterion>
+      </acceptance-criteria>
+      <dependencies>
+        <dependency>Text extraction libraries: PyPDF2, python-docx, pytesseract</dependency>
+        <dependency>Chunking strategy: langchain TextSplitter or custom implementation</dependency>
+      </dependencies>
+    </feature>
+
+    <feature id="F006" priority="high" phase="Phase 1">
+      <name>Semantic Search Endpoint</name>
+      <endpoint>POST /api/v1/search</endpoint>
+      <description>
+        Perform semantic search across all case documents using vector similarity.
+        Optionally filter by case_id, date range, or document type.
+      </description>
+      <request-schema>
+        <field name="query" type="string" required="true">Natural language search query</field>
+        <field name="case_id" type="integer" required="false">Filter to specific case</field>
+        <field name="top_k" type="integer" default="10">Number of results to return</field>
+        <field name="similarity_threshold" type="float" default="0.7">Minimum cosine similarity</field>
+      </request-schema>
+      <response-schema>
+        <field name="results" type="array">List of matching document chunks</field>
+        <field name="results[].chunk_id" type="string">Unique chunk identifier</field>
+        <field name="results[].case_id" type="integer">Associated IRIS case</field>
+        <field name="results[].case_name" type="string">Case name from IRIS</field>
+        <field name="results[].document_name" type="string">Source document filename</field>
+        <field name="results[].content" type="string">Matching text chunk</field>
+        <field name="results[].similarity_score" type="float">Cosine similarity (0-1)</field>
+        <field name="results[].metadata" type="object">Additional context (page number, etc.)</field>
+      </response-schema>
+      <acceptance-criteria>
+        <criterion>Generate embedding for search query</criterion>
+        <criterion>Perform cosine similarity search in pgvector</criterion>
+        <criterion>Apply filters (case_id, threshold) efficiently</criterion>
+        <criterion>Return results sorted by similarity score descending</criterion>
+        <criterion>Enrich results with case metadata from IRIS API</criterion>
+      </acceptance-criteria>
+    </feature>
+
+    <feature id="F007" priority="high" phase="Phase 1">
+      <name>AI Case Assistant Endpoint</name>
+      <endpoint>POST /api/v1/assist/case/{case_id}</endpoint>
+      <description>
+        Answer natural language questions about a case using RAG + optional Ollama LLM.
+        Retrieves relevant document chunks and synthesizes an answer.
+      </description>
+      <request-schema>
+        <field name="question" type="string" required="true">Natural language question</field>
+        <field name="use_llm" type="boolean" default="false">Use Ollama for answer generation</field>
+        <field name="llm_model" type="string" default="llama3.2:3b">Ollama model to use</field>
+      </request-schema>
+      <response-schema>
+        <field name="answer" type="string">Generated answer or concatenated chunks</field>
+        <field name="sources" type="array">List of source chunks used</field>
+        <field name="confidence" type="float">Confidence score if using LLM</field>
+      </response-schema>
+      <acceptance-criteria>
+        <criterion>Perform semantic search to find relevant chunks</criterion>
+        <criterion>If use_llm=false: return concatenated top chunks</criterion>
+        <criterion>If use_llm=true: send chunks + question to Ollama, return synthesized answer</criterion>
+        <criterion>Always include source attribution with chunk IDs</criterion>
+        <criterion>Handle Ollama unavailability gracefully</criterion>
+      </acceptance-criteria>
+    </feature>
+
+    <feature id="F008" priority="medium" phase="Phase 1">
+      <name>Case Report Generation</name>
+      <endpoint>GET /api/v1/report/case/{case_id}.docx</endpoint>
+      <description>
+        Generate a comprehensive investigation report in DOCX format combining IRIS
+        case data, timeline, evidence, and AI-generated summary.
+      </description>
+      <report-sections>
+        <section>Executive Summary (AI-generated overview)</section>
+        <section>Case Metadata (from IRIS: case name, client, dates, investigators)</section>
+        <section>Timeline of Events (from IRIS timeline)</section>
+        <section>Evidence Catalog (list of all evidence with descriptions)</section>
+        <section>Key Findings (from IRIS notes and tasks)</section>
+        <section>Recommendations (AI-generated based on findings)</section>
+        <section>Appendices (extracted document excerpts)</section>
+      </report-sections>
+      <acceptance-criteria>
+        <criterion>Fetch complete case data from IRIS API</criterion>
+        <criterion>Generate DOCX using python-docx library</criterion>
+        <criterion>Include table of contents with hyperlinks</criterion>
+        <criterion>Add company logo and styling (configurable template)</criterion>
+        <criterion>Stream DOCX file as HTTP response</criterion>
+      </acceptance-criteria>
+      <dependencies>
+        <dependency>python-docx for Word document generation</dependency>
+        <dependency>Report template system (Jinja2 or similar)</dependency>
+      </dependencies>
+    </feature>
+
+    <feature id="F009" priority="low" phase="Phase 2">
+      <name>Nextcloud Integration</name>
+      <description>
+        Sync documents from Nextcloud folders into RAG database for searchability.
+        Enable collaborative editing of investigation notes and reports.
+      </description>
+      <acceptance-criteria>
+        <criterion>Authenticate with Nextcloud WebDAV API</criterion>
+        <criterion>Monitor designated folders for new/updated files</criterion>
+        <criterion>Sync Nextcloud documents to RAG database</criterion>
+        <criterion>Link Nextcloud files to IRIS cases via metadata</criterion>
+      </acceptance-criteria>
+    </feature>
+
+    <feature id="F010" priority="low" phase="Phase 2">
+      <name>Paperless-ngx Integration</name>
+      <description>
+        Ingest OCR-processed documents from Paperless-ngx for cases involving scanned
+        evidence or paper trails.
+      </description>
+      <acceptance-criteria>
+        <criterion>Query Paperless API for documents with specific tags/dates</criterion>
+        <criterion>Download OCR text and metadata</criterion>
+        <criterion>Link Paperless documents to IRIS cases</criterion>
+        <criterion>Leverage Paperless categorization in search results</criterion>
+      </acceptance-criteria>
+    </feature>
+
+    <feature id="F011" priority="medium" phase="Phase 2">
+      <name>Ollama Local SLM Integration</name>
+      <description>
+        Full integration with Ollama for on-premise AI assistance without cloud dependencies.
+      </description>
+      <acceptance-criteria>
+        <criterion>Auto-detect Ollama availability</criterion>
+        <criterion>Support model selection (llama3.2, mistral, etc.)</criterion>
+        <criterion>Implement prompt engineering for investigation context</criterion>
+        <criterion>Cache LLM responses in Redis for performance</criterion>
+      </acceptance-criteria>
+    </feature>
+
+    <feature id="F012" priority="low" phase="Phase 3">
+      <name>Production Deployment</name>
+      <description>Nginx reverse proxy, SSL/TLS, domain-based routing, monitoring</description>
+      <acceptance-criteria>
+        <criterion>Nginx reverse proxy with SSL certificates</criterion>
+        <criterion>Domain-based routing (iris.domain.com, rag.domain.com)</criterion>
+        <criterion>Prometheus metrics exporter</criterion>
+        <criterion>Grafana dashboards for monitoring</criterion>
+        <criterion>Automated backup scripts for databases and volumes</criterion>
+      </acceptance-criteria>
+    </feature>
+
+  </planned-features>
+
+  <!-- ============================================ -->
+  <!-- DATABASE SCHEMA -->
+  <!-- ============================================ -->
+  <database-schema>
+
+    <database name="rag_db" engine="PostgreSQL 16 with pgvector">
+
+      <table name="documents">
+        <description>Metadata for ingested documents from IRIS cases</description>
+        <columns>
+          <column name="id" type="SERIAL PRIMARY KEY">Auto-incrementing ID</column>
+          <column name="case_id" type="INTEGER NOT NULL">Reference to IRIS case</column>
+          <column name="document_name" type="VARCHAR(512) NOT NULL">Original filename</column>
+          <column name="document_type" type="VARCHAR(50)">MIME type or extension</column>
+          <column name="file_size" type="BIGINT">Size in bytes</column>
+          <column name="file_hash" type="VARCHAR(64)">SHA-256 hash for deduplication</column>
+          <column name="storage_path" type="TEXT">MinIO object path</column>
+          <column name="uploaded_at" type="TIMESTAMP DEFAULT NOW()">Ingestion timestamp</column>
+          <column name="metadata" type="JSONB">Additional metadata (IRIS evidence ID, tags, etc.)</column>
+        </columns>
+        <indexes>
+          <index>CREATE INDEX idx_documents_case_id ON documents(case_id)</index>
+          <index>CREATE INDEX idx_documents_hash ON documents(file_hash)</index>
+        </indexes>
+      </table>
+
+      <table name="chunks">
+        <description>Text chunks with embeddings for semantic search</description>
+        <columns>
+          <column name="id" type="UUID PRIMARY KEY DEFAULT gen_random_uuid()">Unique chunk ID</column>
+          <column name="document_id" type="INTEGER REFERENCES documents(id) ON DELETE CASCADE">Parent document</column>
+          <column name="case_id" type="INTEGER NOT NULL">Denormalized for fast filtering</column>
+          <column name="chunk_index" type="INTEGER NOT NULL">Sequential position in document</column>
+          <column name="content" type="TEXT NOT NULL">Raw text content</column>
+          <column name="embedding" type="VECTOR(384)">Sentence Transformer embedding</column>
+          <column name="token_count" type="INTEGER">Number of tokens in chunk</column>
+          <column name="metadata" type="JSONB">Page number, section title, etc.</column>
+          <column name="created_at" type="TIMESTAMP DEFAULT NOW()">Chunk creation time</column>
+        </columns>
+        <indexes>
+          <index>CREATE INDEX idx_chunks_case_id ON chunks(case_id)</index>
+          <index>CREATE INDEX idx_chunks_document_id ON chunks(document_id)</index>
+          <index>CREATE INDEX idx_chunks_embedding_ivfflat ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)</index>
+          <index>-- For production: CREATE INDEX idx_chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)</index>
+        </indexes>
+      </table>
+
+      <table name="sync_jobs">
+        <description>Track sync operations from IRIS to RAG database</description>
+        <columns>
+          <column name="id" type="SERIAL PRIMARY KEY">Job ID</column>
+          <column name="case_id" type="INTEGER NOT NULL">IRIS case being synced</column>
+          <column name="status" type="VARCHAR(20) NOT NULL">pending, running, completed, failed</column>
+          <column name="started_at" type="TIMESTAMP">Job start time</column>
+          <column name="completed_at" type="TIMESTAMP">Job completion time</column>
+          <column name="documents_synced" type="INTEGER DEFAULT 0">Number of documents processed</column>
+          <column name="chunks_created" type="INTEGER DEFAULT 0">Number of chunks generated</column>
+          <column name="error_message" type="TEXT">Error details if failed</column>
+          <column name="metadata" type="JSONB">Additional job context</column>
+        </columns>
+        <indexes>
+          <index>CREATE INDEX idx_sync_jobs_case_id ON sync_jobs(case_id)</index>
+          <index>CREATE INDEX idx_sync_jobs_status ON sync_jobs(status)</index>
+        </indexes>
+      </table>
+
+      <table name="search_history">
+        <description>Audit log of search queries for analytics</description>
+        <columns>
+          <column name="id" type="SERIAL PRIMARY KEY">Search ID</column>
+          <column name="query_text" type="TEXT NOT NULL">User's search query</column>
+          <column name="case_id" type="INTEGER">If filtered to specific case</column>
+          <column name="results_count" type="INTEGER">Number of results returned</column>
+          <column name="executed_at" type="TIMESTAMP DEFAULT NOW()">Query timestamp</column>
+          <column name="user_id" type="VARCHAR(255)">User identifier (from IRIS API key)</column>
+          <column name="response_time_ms" type="INTEGER">Query execution time</column>
+        </columns>
+        <indexes>
+          <index>CREATE INDEX idx_search_history_executed_at ON search_history(executed_at DESC)</index>
+        </indexes>
+      </table>
+
+    </database>
+
+    <database name="iris_db" engine="PostgreSQL 12 (IRIS-managed)">
+      <description>IRIS application database - DO NOT modify directly, managed by IRIS migrations</description>
+      <access-pattern>Read-only via IRIS API for RAG Gateway</access-pattern>
+    </database>
+
+  </database-schema>
+
+  <!-- ============================================ -->
+  <!-- API SPECIFICATION -->
+  <!-- ============================================ -->
+  <api-specification>
+
+    <base-url>http://localhost:8080</base-url>
+    <authentication>
+      <method>Bearer Token (IRIS API key)</method>
+      <header>Authorization: Bearer {IRIS_API_KEY}</header>
+    </authentication>
+
+    <endpoints>
+
+      <endpoint>
+        <method>GET</method>
+        <path>/health</path>
+        <authentication-required>false</authentication-required>
+        <description>Health check endpoint</description>
+        <response status="200">
+          <example>
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "services": {
+    "database": "up",
+    "embeddings": "up",
+    "iris": "up",
+    "ollama": "unavailable"
+  }
+}
+          </example>
+        </response>
+      </endpoint>
+
+      <endpoint>
+        <method>POST</method>
+        <path>/api/v1/sync/case/{case_id}</path>
+        <authentication-required>true</authentication-required>
+        <description>Sync IRIS case documents to RAG database</description>
+        <parameters>
+          <parameter name="case_id" type="path" required="true">IRIS case ID</parameter>
+          <parameter name="force_reindex" type="query" default="false">Re-process existing documents</parameter>
+        </parameters>
+        <response status="202">
+          <example>
+{
+  "status": "accepted",
+  "job_id": 123,
+  "case_id": 1,
+  "message": "Sync job started for case #1 - Initial Demo"
+}
+          </example>
+        </response>
+        <errors>
+          <error status="404">Case not found in IRIS</error>
+          <error status="401">Invalid or missing API key</error>
+        </errors>
+      </endpoint>
+
+      <endpoint>
+        <method>GET</method>
+        <path>/api/v1/sync/status/{job_id}</path>
+        <authentication-required>true</authentication-required>
+        <description>Check sync job status</description>
+        <response status="200">
+          <example>
+{
+  "job_id": 123,
+  "case_id": 1,
+  "status": "completed",
+  "started_at": "2026-01-14T15:30:00Z",
+  "completed_at": "2026-01-14T15:32:15Z",
+  "documents_synced": 15,
+  "chunks_created": 487
+}
+          </example>
+        </response>
+      </endpoint>
+
+      <endpoint>
+        <method>POST</method>
+        <path>/api/v1/search</path>
+        <authentication-required>true</authentication-required>
+        <description>Semantic search across case documents</description>
+        <request-body>
+{
+  "query": "What malware indicators were found?",
+  "case_id": 1,
+  "top_k": 10,
+  "similarity_threshold": 0.7
+}
+        </request-body>
+        <response status="200">
+          <example>
+{
+  "query": "What malware indicators were found?",
+  "results": [
+    {
+      "chunk_id": "a3f2e1c0-...",
+      "case_id": 1,
+      "case_name": "#1 - Initial Demo",
+      "document_name": "forensic_report.pdf",
+      "content": "Analysis revealed 3 IoCs: C2 domain evil.com, hash SHA256:abc123...",
+      "similarity_score": 0.89,
+      "metadata": {"page": 5, "section": "Findings"}
+    }
+  ],
+  "total_results": 8,
+  "search_time_ms": 145
+}
+          </example>
+        </response>
+      </endpoint>
+
+      <endpoint>
+        <method>POST</method>
+        <path>/api/v1/assist/case/{case_id}</path>
+        <authentication-required>true</authentication-required>
+        <description>AI-powered case assistant</description>
+        <request-body>
+{
+  "question": "Summarize the attack timeline",
+  "use_llm": true,
+  "llm_model": "llama3.2:3b"
+}
+        </request-body>
+        <response status="200">
+          <example>
+{
+  "answer": "Based on the evidence, the attack began on Jan 10 with a phishing email...",
+  "sources": [
+    {"chunk_id": "...", "document": "timeline.docx", "relevance": 0.92},
+    {"chunk_id": "...", "document": "email_logs.csv", "relevance": 0.85}
+  ],
+  "confidence": 0.87,
+  "llm_used": "llama3.2:3b"
+}
+          </example>
+        </response>
+      </endpoint>
+
+      <endpoint>
+        <method>GET</method>
+        <path>/api/v1/report/case/{case_id}.docx</path>
+        <authentication-required>true</authentication-required>
+        <description>Generate investigation report</description>
+        <parameters>
+          <parameter name="include_appendices" type="query" default="true">Include document excerpts</parameter>
+          <parameter name="template" type="query" default="default">Report template name</parameter>
+        </parameters>
+        <response status="200">
+          <content-type>application/vnd.openxmlformats-officedocument.wordprocessingml.document</content-type>
+          <headers>
+            <header>Content-Disposition: attachment; filename="Case_1_Report.docx"</header>
+          </headers>
+        </response>
+      </endpoint>
+
+    </endpoints>
+
+  </api-specification>
+
+  <!-- ============================================ -->
+  <!-- DEPLOYMENT INSTRUCTIONS -->
+  <!-- ============================================ -->
+  <deployment>
+
+    <local-development>
+      <step>Clone repository: git clone https://github.com/SBG4/audit-case-os.git</step>
+      <step>Copy environment: cp .env.example .env</step>
+      <step>Review and update .env with secure passwords (defaults provided)</step>
+      <step>Start core services: docker compose --profile core up -d</step>
+      <step>Wait for health checks: docker compose ps (all services should be healthy)</step>
+      <step>Create RAG database: docker exec auditcaseos-postgres psql -U postgres -c "CREATE DATABASE rag_db;" (if not exists)</step>
+      <step>Enable vector extension: docker exec auditcaseos-postgres psql -U postgres -d rag_db -c "CREATE EXTENSION IF NOT EXISTS vector;"</step>
+      <step>Set IRIS API key: docker exec auditcaseos-iris-db psql -U postgres -d iris_db -c "UPDATE \"user\" SET api_key = '{IRIS_API_KEY}' WHERE \"user\" = 'administrator';"</step>
+      <step>Verify IRIS: curl http://localhost:8001/manage/cases/list -H "Authorization: Bearer {IRIS_API_KEY}"</step>
+      <step>Verify RAG: curl http://localhost:8080/health</step>
+    </local-development>
+
+    <production-checklist>
+      <item>Update all passwords in .env with cryptographically random values</item>
+      <item>Enable HTTPS with valid SSL certificates (Let's Encrypt recommended)</item>
+      <item>Configure nginx reverse proxy with rate limiting</item>
+      <item>Set up automated database backups (pg_dump scheduled via cron)</item>
+      <item>Configure log aggregation (ELK stack or similar)</item>
+      <item>Enable Prometheus metrics and Grafana dashboards</item>
+      <item>Restrict network access (firewall rules, Docker networks)</item>
+      <item>Set up monitoring alerts (disk space, service health, error rates)</item>
+      <item>Document incident response procedures</item>
+      <item>Perform security audit (OWASP Top 10 checks)</item>
+    </production-checklist>
+
+  </deployment>
+
+  <!-- ============================================ -->
+  <!-- CURRENT DEVELOPMENT FOCUS -->
+  <!-- ============================================ -->
+  <current-focus phase="Phase 1">
+    <priority-1>Implement RAG case sync endpoint (F005)</priority-1>
+    <priority-2>Implement semantic search endpoint (F006)</priority-2>
+    <priority-3>Implement AI case assistant endpoint (F007)</priority-3>
+
+    <blockers>
+      <blocker status="none">All infrastructure operational</blocker>
+    </blockers>
+
+    <next-session-objectives>
+      <objective>Design and implement document chunking strategy</objective>
+      <objective>Create SQLAlchemy models for rag_db schema</objective>
+      <objective>Build IRIS API client wrapper for fetching case data</objective>
+      <objective>Implement file download and text extraction pipeline</objective>
+      <objective>Create /sync/case/{case_id} endpoint with background job processing</objective>
+    </next-session-objectives>
+  </current-focus>
+
+  <!-- ============================================ -->
+  <!-- CONTACT & SUPPORT -->
+  <!-- ============================================ -->
+  <contact>
+    <github-repo>https://github.com/SBG4/audit-case-os</github-repo>
+    <github-user>sbg4</github-user>
+    <issue-tracker>https://github.com/SBG4/audit-case-os/issues</issue-tracker>
+  </contact>
+
+</auditcaseos-project-specification>
