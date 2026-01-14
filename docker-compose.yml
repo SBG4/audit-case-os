@@ -57,8 +57,6 @@ services:
       POSTGRES_DB: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./config/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init.sh
-      - ./config/postgres/init-pgvector.sql:/docker-entrypoint-initdb.d/02-pgvector.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -206,7 +204,7 @@ services:
 
       # IRIS Integration
       IRIS_API_URL: http://iris-app:8000
-      IRIS_API_KEY: ${IRIS_API_KEY}
+      IRIS_API_KEY: ${IRIS_API_KEY:-}
 
       # MinIO Storage
       MINIO_ENDPOINT: minio:9000
@@ -235,11 +233,9 @@ services:
       # App Config
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DEBUG: ${DEBUG:-false}
-    volumes:
-      - ./services/rag-gateway/app:/app/app  # Hot-reload for development
     ports:
       - "8080:8080"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
     restart: unless-stopped
 
   ###################
